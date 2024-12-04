@@ -1,0 +1,19 @@
+{
+    "headings": {
+        "AbstractPL": "STRESZCZENIE",
+        "AbstractEN": "ABSTRACT",
+        "Bibliography": "BIBLIOGRAFIA",
+        "listOfSymbols": "LISTA SYMBOLI",
+        "listOfAbbreviations": "LISTA SKRÓTÓW",
+        "Conclusion": "Podsumowanie",
+        "TableofContents": "SPIS TREŚCI",
+        "Figures": "SPIS RYSUNKÓW",
+        "Tables": "SPIS TABEL"
+    },
+    "Utilites": {
+        "FirstHeaderAfterTableofContent": "LISTA SKRÓTÓW"
+    },
+    "PageRemoval": {
+        "page" : "2"
+    }
+}
