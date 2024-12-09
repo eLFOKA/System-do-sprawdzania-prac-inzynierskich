@@ -1,0 +1,8 @@
+# Ignorowanie pliku test.pdf
+test.pdf
+
+# Ignorowanie katalogu .venv (wirtualne środowisko)
+.venv/
+
+# Ignorowanie katalogu __pycache__ (pliki buforowane Python)
+__pycache__/

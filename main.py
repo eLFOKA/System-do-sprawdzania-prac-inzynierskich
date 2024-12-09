@@ -17,6 +17,8 @@ def get_args():
     parser.add_argument("--headers", default="headers.json", type=str, help="Ścieżka do pliku JSON z nagłówkami.")
     parser.add_argument("--references", default="baza_prac", type=str, help="Ścieżka do folderu z pracami referencyjnymi.")
     parser.add_argument("--output", type=str, default="output.pdf", help="Nazwa pliku wyjściowego.")
+    parser.add_argument("--login", default=None ,type=str, help="Login do API.")
+    parser.add_argument("--password", default=None, type=str, help="Hasło do API.")
     return parser.parse_args()
 
 class ContentExtractor:
@@ -31,7 +33,7 @@ class ContentExtractor:
 
         for page_num in range(len(document)):
             page = document[page_num]
-            blocks = page.get_text("dict")["blocks"]  # Pobieramy szczegółowe informacje o blokach tekstu
+            blocks = page.get_text("dict")["blocks"]
 
             for block in blocks:
                 for line in block.get("lines", []):
@@ -74,7 +76,7 @@ class ContentExtractor:
                 i += 1  # Przejdź do następnej linii tylko jeśli nie połączyliśmy bieżącej
         return structures
 
-    def merge_text_to_paragraphs(structures, headers=None, no_pages=0):
+    def merge_text_to_paragraphs(structures, headers=None, no_pages=2):
         """
         Łączy linie w akapity na podstawie reguł:
         - Linie muszą być typu 'text'.
@@ -88,7 +90,6 @@ class ContentExtractor:
         in_bibitem = False  # Flaga informująca, czy jesteśmy w bloku `bibitem`
 
         for i, structure in enumerate(structures):
-            # Jeśli linia to numer strony (np. '1'), dodaj jako osobny blok
             if structure["page_number"] != no_pages:
                 if structure["content"].isdigit():
                     blocs_of_content.append({
@@ -651,9 +652,23 @@ class AddCommentsToPDF:
         doc.save("output.pdf")
         doc.close()
 
+def remove_unnecessary(lines):
+
+    for line in lines:
+        # jeżeli komentarz zawiera tekst "To zdanie nie zaczyna się" zmień ten komentarz na None
+        if line["comment"] is not None and "To zdanie nie zaczyna się" in line["comment"]:
+            line["comment"] = None
+        # # Jeżeli 
+        # elif
+
+
+    return lines
+
 def load_pdf_pymupdf(args):
     file_path = args.pdf
     references_folder = args.references
+    password = args.password
+    login = args.login
 
 
     if file_path:
@@ -661,26 +676,22 @@ def load_pdf_pymupdf(args):
         structures = extractor.extract_text()
         checker = ErrorChecker()
 
-        """ Praca na liniach tekstu"""
         lines = structures
-        
         lines = ContentExtractor.merge_lines_together(structures)
-        """ Koniec przygotawania bloków tekstu"""
 
-        # znormalizuj linie
+        # normalizacja linii
         for line in lines:
             line["content_normalized"] = StructureNormalizer.normalize_text(line["content"])
             line["comment"] = None
 
-        """ Nagłówki z table of contents """
+        # nagłówki z pliku json
         lines = ContentExtractor.remove_page_numbers(lines)
         headers = ContentExtractor.find_Table_of_Contents(lines)
-        """ koniec pracy na nagłówkach """
 
         # Połącz linie w bloki
         blocs_of_content = ContentExtractor.merge_text_to_paragraphs(lines, headers, no_pages=2)
 
-        # normalizacja tekstu
+        # normalizacja tekstu w blokach
         for bloc in blocs_of_content:
             bloc["content_normalized"] = StructureNormalizer.normalize_text(bloc["content"])
             bloc["content_normalized"] = StructureNormalizer.fix_hyphenation(bloc["content_normalized"])
@@ -693,18 +704,17 @@ def load_pdf_pymupdf(args):
             if bloc['block_type'] == 'Header':
                 bloc["content_normalized"] = StructureNormalizer.normalize_table_of_contents(bloc["content_normalized"])
 
-        """ Sprawdzanie braku tekstu między nagłówkami """
+        # sprawdzanie czy między nagłówkami nie ma tekstu
         blocs_of_content = checker.check_noText_between_headers(blocs_of_content)
 
-        """ Sprawdzanie caption nad i pod obiektami svg"""
+        # sprawdzanie czy umiejscowienie podpisów pod obrazami jest poprawne
         svg_objects = extractor.extract_svg()
         lines = checker.check_captions_svg_objects(lines, svg_objects)
 
-        """sprawdzanie podpisów pod obrazami"""
         images = extractor.extract_images()
         lines = checker.check_captions_image_objects(lines, images)
 
-        """ Sprawdzanie podobieństwa paragrafów z pracami referencyjnymi """
+        # Sprawdzanie podobieństwa do prac referencyjnych
         reference_paragraphs = ContentExtractor.load_reference_works(references_folder)
 
         for i in range(len(reference_paragraphs)):
@@ -717,7 +727,7 @@ def load_pdf_pymupdf(args):
                         bloc["Plagiarism"] = f"Podobieństwo do pracy referencyjnej: {percenatage_similarity}%, z pracy Praca_1.pdf"
                         print(f"Wykryto podobieństwo do pracy referencyjnej: {percenatage_similarity}%, z pracy Praca_1.pdf")
 
-        """ Sprawdzanie błędów w tekście """
+        # Sprawdzanie błędów pisowni
         for bloc in blocs_of_content:
             if bloc['block_type'] == 'paragraph' or bloc['block_type'] == 'Header':
                 errors = checker.check_errors(bloc.get("content_normalized"))
@@ -731,30 +741,31 @@ def load_pdf_pymupdf(args):
                             CommentAdder.add_error_to_line(lines, linia, error.message, strona)
 
         # Sprawdzanie z zeroGPT
-        zeroGPT = ZeroGPTClient()
+        if login is not None and password is not None:
+            zeroGPT = ZeroGPTClient(login=login, password=password)
 
-        for bloc in blocs_of_content:
-            if bloc['block_type'] == 'paragraph':
-                # Znajdź najdłuższe akapity
-                if len(bloc['content_normalized']) > 450:
-                    response = zeroGPT.analyze_text(bloc['content_normalized'])
+            for bloc in blocs_of_content:
+                if bloc['block_type'] == 'paragraph':
+                    # Znajdź najdłuższe akapity
+                    if len(bloc['content_normalized']) > 150:
+                        response = zeroGPT.analyze_text(bloc['content_normalized'])
 
-                    # Jeśli odpowiedź jest None, pomiń ten blok
-                    if response is None:
-                        print("Brak odpowiedzi od ZeroGPT dla akapitu. Pomijanie...")
-                        break
-                    else:
-                        fake_percentage = response['data']['fakePercentage']
-                        # Jeśli fakePercentage jest większe niż 0.7, to zaznacz cały blok akapitu czerwoną ramką
-                        if fake_percentage > 89.5:
-                            bloc["AI_detection"] = f"System wykrył że tekst jest w : {response['data']['fakePercentage']}% wygenerowany przez AI"
-                            print(f"System wykrył że tekst jest w : {response['data']['fakePercentage']}% wygenerowany przez AI")
+                        # Jeśli odpowiedź jest None, pomiń ten blok
+                        if response is None:
+                            print("Brak odpowiedzi od ZeroGPT dla akapitu. Pomijanie...")
+                            break
+                        else:
+                            fake_percentage = response['data']['fakePercentage']
+                            # Jeśli fakePercentage jest większe niż 0.7, to zaznacz cały blok akapitu czerwoną ramką
+                            if fake_percentage > 95.0:
+                                bloc["AI_detection"] = f"System wykrył że tekst jest w : {response['data']['fakePercentage']}% wygenerowany przez AI"
+                                print(f"System wykrył że tekst jest w : {response['data']['fakePercentage']}% wygenerowany przez AI")
 
+        lines = remove_unnecessary(lines)
                 
-        """ Dodawanie komentarzy do PDF """
+        # Dodawanie komentarzy do pliku PDF
         add_comments = AddCommentsToPDF(file_path, lines, blocs_of_content)
         add_comments.add_comments_to_pdf()   
-
         print("Zakończono przetwarzanie pliku PDF.")
     else:
         print("Nie podano ścieżki do pliku PDF.")

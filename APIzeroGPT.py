@@ -1,9 +1,9 @@
 import requests
 
 class ZeroGPTClient:
-    def __init__(self, base_url="https://api.zerogpt.com"):
-        self.email = "email"
-        self.password = "password"
+    def __init__(self, base_url="https://api.zerogpt.com", login=None, password=None):
+        self.email = login
+        self.password = password
         self.base_url = base_url
         self.token = None
         self.api_key = None
