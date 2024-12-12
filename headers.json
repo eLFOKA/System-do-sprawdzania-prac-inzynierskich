@@ -5,15 +5,21 @@
         "Bibliography": "BIBLIOGRAFIA",
         "listOfSymbols": "LISTA SYMBOLI",
         "listOfAbbreviations": "LISTA SKRÓTÓW",
-        "Conclusion": "Podsumowanie",
         "TableofContents": "SPIS TREŚCI",
         "Figures": "SPIS RYSUNKÓW",
         "Tables": "SPIS TABEL"
     },
+    "NumOfPages ": {
+        "AbstractPL ": "1",
+        "AbstractEN ": "1",
+        "Bibliography ": "3",
+        "listOfSymbols ": "1",
+        "listOfAbbreviations ": "1",
+        "TableofContents ": "1",
+        "Figures ": "1",
+        "Tables ": "1"
+    },
     "Utilites": {
         "FirstHeaderAfterTableofContent": "LISTA SKRÓTÓW"
-    },
-    "PageRemoval": {
-        "page" : "2"
     }
 }

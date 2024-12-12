@@ -19,6 +19,8 @@ def get_args():
     parser.add_argument("--output", type=str, default="output.pdf", help="Nazwa pliku wyjściowego.")
     parser.add_argument("--login", default=None ,type=str, help="Login do API.")
     parser.add_argument("--password", default=None, type=str, help="Hasło do API.")
+    parser.add_argument("--thrAI", default=85.0, type=float, help="Próg dla AI.")
+    parser.add_argument("--thrPlag", default=85.0, type=float, help="Próg dla Plagiarism.")
     return parser.parse_args()
 
 class ContentExtractor:
@@ -187,7 +189,6 @@ class ContentExtractor:
             else:    
                 continue
 
-        #połązcz headers z headings
         headers = headings + headers
 
         return headers
@@ -301,7 +302,6 @@ class ContentExtractor:
             if filename.endswith(".pdf"):
                 file_path = os.path.join(folder_path, filename)
                 print(f"Wczytywanie pliku: {filename}")
-                # Wykorzystanie istniejącej metody do ekstrakcji paragrafów
                 extractor = ContentExtractor(file_path)
 
                 strutures = extractor.extract_text()
@@ -324,9 +324,10 @@ class ContentExtractor:
 
                 
 
-                reference_paragraphs = [bloc["content_normalized"] for bloc in blocs_of_content if bloc["block_type"] == "paragraph"]
-
-
+                reference_paragraphs = [
+                    {"filename": filename, "content_normalized": bloc["content_normalized"]}
+                    for bloc in blocs_of_content if bloc["block_type"] == "paragraph"
+                ]
 
         return reference_paragraphs
 
@@ -366,7 +367,6 @@ class StructureNormalizer:
 
         # NFD: Rozbij znaki złożone na podstawowe + diakrytyki
         text = unicodedata.normalize('NFD', text)
-        # Zamiana `ó` na jego odpowiednik, aby uniknąć usunięcia podczas procesu
         text = re.sub(r'ó', 'ó', text)  # Zastępuje `ó` na `ó`
         # Usuń diakrytyki (np. `ą` → `a`, `ę` → `e`)
         text = ''.join(c for c in text if unicodedata.category(c) != 'Mn')
@@ -380,7 +380,6 @@ class StructureNormalizer:
         text = re.sub(r'\s*´\s*n', 'ń', text)  # Zamienia `´\nn` na `ń`
         text = re.sub(r'\s*´\s*l', 'ł', text)  # Zamienia `´\nl` na `ł`
         text = re.sub(r'\s*´\s*o', 'ó', text)  # Zamienia `´\no` na `ó`
-
         # zamień te błędy również dla znaków z dużymi literami
         text = re.sub(r'\s*˛\s*A', 'Ą', text)  # Zamienia `˛\nA` na `Ą`
         text = re.sub(r'\s*´\s*S', 'Ś', text)  # Zamienia `´\nS` na `Ś`
@@ -391,7 +390,6 @@ class StructureNormalizer:
         text = re.sub(r'\s*´\s*N', 'Ń', text)  # Zamienia `´\nN` na `Ń`
         text = re.sub(r'\s*´\s*L', 'Ł', text)  # Zamienia `´\nL` na `Ł`
         text = re.sub(r'\s*´\s*O', 'Ó', text)  # Zamienia `´\nO` na `Ó`
-
         # Usunięcie nadmiarowych liter po `ą`, `ś`, `ć`, `ę`
         text = re.sub(r'ąa', 'ą', text)  # Zamienia `ąa` na `ą`
         text = re.sub(r'śs', 'ś', text)  # Zamienia `śs` na `ś`
@@ -402,7 +400,6 @@ class StructureNormalizer:
         text = re.sub(r'ńn', 'ń', text)  # Zamienia `ńn` na `ń`
         text = re.sub(r'łl', 'ł', text)  # Zamienia `łl` na `ł`
         text = re.sub(r'óo', 'ó', text)  # Zamienia `óo` na `ó`
-
         text = re.sub(r'ĄA', 'Ą', text)  # Zamienia `ĄA` na `Ą`
         text = re.sub(r'ŚS', 'Ś', text)  # Zamienia `ŚS` na `Ś`
         text = re.sub(r'ĆC', 'Ć', text)  # Zamienia `ĆC` na `Ć`
@@ -415,13 +412,7 @@ class StructureNormalizer:
 
         # Usuwanie nadmiarowych spacji
         text = re.sub(r'\s+', ' ', text)
-        
-        #text = re.sub(r'[‐‑‒–—―-]\s*', '', text)
-        #text = re.sub(r'[‐‑‒–—―-][\s\u00A0\u2000-\u200B\u202F]*', '', text)
-        #text = re.sub(r'[‐‑‒–—―-][\s]*', '', text)
-        #text = re.sub(r'[‐‑‒–—―-] ', '', text)
-        #text = re.sub(r'[‐‑‒–—―-]\s*', '', text)
-
+    
         return text
 
     @staticmethod
@@ -591,7 +582,7 @@ class findContextInLines:
         best_score = 0
 
         for line in lines:
-            line_words = set(re.findall(r'\b\w+\b', line["content_normalized"]))
+            line_words = set(re.findall(r'\b\w+\b', line["content"]))
             common_words = words_in_text.intersection(line_words)
 
             if len(common_words) > best_score:
@@ -629,7 +620,6 @@ class AddCommentsToPDF:
 
         for bloc in self.blocs_of_content:
             if bloc['AI_detection'] is not None:
-                # Dodaj czerwoną ramkę do bloku
                 rect = fitz.Rect(bloc["bounding_box"])
                 comment_point = fitz.Point(bloc["bounding_box"][2], bloc["bounding_box"][3] - 20)
                 page = doc[bloc["page_number"] - 1]
@@ -639,7 +629,6 @@ class AddCommentsToPDF:
 
         for bloc in self.blocs_of_content:
             if bloc['Plagiarism'] is not None:
-                # Dodaj czerwoną ramkę do bloku
                 rect = fitz.Rect(bloc["bounding_box"])
                 comment_point = fitz.Point(bloc["bounding_box"][2], bloc["bounding_box"][3] - 20)
                 page = doc[bloc["page_number"] - 1]
@@ -655,26 +644,26 @@ class AddCommentsToPDF:
 def remove_unnecessary(lines):
 
     for line in lines:
-        # jeżeli komentarz zawiera tekst "To zdanie nie zaczyna się" zmień ten komentarz na None
         if line["comment"] is not None and "To zdanie nie zaczyna się" in line["comment"]:
             line["comment"] = None
-        # # Jeżeli 
-        # elif
-
-
+        elif line["comment"] is not None and "Brak niesparowanego symbolu" in line["comment"]:
+            line["comment"] = None
     return lines
 
-def load_pdf_pymupdf(args):
+def load_pdf(args):
     file_path = args.pdf
     references_folder = args.references
     password = args.password
     login = args.login
+    thresholdAI = args.thrAI
+    thresholdPlagiarism = args.thrPlag
 
 
     if file_path:
         extractor = ContentExtractor(file_path)
-        structures = extractor.extract_text()
         checker = ErrorChecker()
+
+        structures = extractor.extract_text()
 
         lines = structures
         lines = ContentExtractor.merge_lines_together(structures)
@@ -695,6 +684,7 @@ def load_pdf_pymupdf(args):
         for bloc in blocs_of_content:
             bloc["content_normalized"] = StructureNormalizer.normalize_text(bloc["content"])
             bloc["content_normalized"] = StructureNormalizer.fix_hyphenation(bloc["content_normalized"])
+            bloc["content"] = StructureNormalizer.fix_hyphenation(bloc["content"])
             bloc["comment"] = None
             bloc["Plagiarism"] = None
             bloc["AI_detection"] = None
@@ -715,17 +705,26 @@ def load_pdf_pymupdf(args):
         lines = checker.check_captions_image_objects(lines, images)
 
         # Sprawdzanie podobieństwa do prac referencyjnych
+        
         reference_paragraphs = ContentExtractor.load_reference_works(references_folder)
 
-        for i in range(len(reference_paragraphs)):
-            for bloc in blocs_of_content:
+        for bloc in blocs_of_content:
+            for ref_paragraph in reference_paragraphs:
+                percenatage_similarity = checker.compare_paragraphs_with_references(
+                    bloc["content_normalized"], ref_paragraph["content_normalized"]
+                )
 
-                percenatage_similarity = checker.compare_paragraphs_with_references(bloc["content_normalized"], reference_paragraphs[0])
-
-                if percenatage_similarity > 90:
+                if percenatage_similarity > thresholdPlagiarism:
                     if bloc["Plagiarism"] is None:
-                        bloc["Plagiarism"] = f"Podobieństwo do pracy referencyjnej: {percenatage_similarity}%, z pracy Praca_1.pdf"
-                        print(f"Wykryto podobieństwo do pracy referencyjnej: {percenatage_similarity}%, z pracy Praca_1.pdf")
+                        bloc["Plagiarism"] = (
+                            f"Podobieństwo do pracy referencyjnej: {percenatage_similarity}%, "
+                            f"z pracy {ref_paragraph['filename']}"
+                        )
+                        print(
+                            f"Wykryto podobieństwo do pracy referencyjnej: {percenatage_similarity}%, "
+                            f"z pracy {ref_paragraph['filename']}"
+                        )
+
 
         # Sprawdzanie błędów pisowni
         for bloc in blocs_of_content:
@@ -746,8 +745,7 @@ def load_pdf_pymupdf(args):
 
             for bloc in blocs_of_content:
                 if bloc['block_type'] == 'paragraph':
-                    # Znajdź najdłuższe akapity
-                    if len(bloc['content_normalized']) > 150:
+                    if len(bloc['content_normalized']) > 250:
                         response = zeroGPT.analyze_text(bloc['content_normalized'])
 
                         # Jeśli odpowiedź jest None, pomiń ten blok
@@ -756,10 +754,11 @@ def load_pdf_pymupdf(args):
                             break
                         else:
                             fake_percentage = response['data']['fakePercentage']
-                            # Jeśli fakePercentage jest większe niż 0.7, to zaznacz cały blok akapitu czerwoną ramką
-                            if fake_percentage > 95.0:
+                            if fake_percentage > thresholdAI:
                                 bloc["AI_detection"] = f"System wykrył że tekst jest w : {response['data']['fakePercentage']}% wygenerowany przez AI"
-                                print(f"System wykrył że tekst jest w : {response['data']['fakePercentage']}% wygenerowany przez AI")
+                            
+        else:
+            print("Nie podano loginu i hasła do ZeroGPT. Pomijanie detekcji AI.")
 
         lines = remove_unnecessary(lines)
                 
@@ -784,4 +783,4 @@ def save_to_file(paragraphs, filename):
 if __name__ == "__main__":
     
     arg = get_args()
-    load_pdf_pymupdf(arg)
+    load_pdf(arg)
